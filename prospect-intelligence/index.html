@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prospect Intelligence — Cottesloe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0d0f12;
+  --surface: #13161b;
+  --surface2: #1a1e25;
+  --border: rgba(255,255,255,0.07);
+  --border2: rgba(255,255,255,0.13);
+  --accent: #c8a96e;
+  --accent2: #e8c98e;
+  --text: #e8e6e0;
+  --muted: #7a7870;
+  --muted2: #a09e98;
+  --red: #e05a4e;
+  --green: #4eb87a;
+  --blue: #5a9fd4;
+  --score-high: #c8a96e;
+  --score-mid: #7a9fd4;
+  --score-low: #5a6070;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Outfit', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  font-size: 14px;
+  line-height: 1.6;
+}
+/* HEADER */
+header {
+  border-bottom: 1px solid var(--border);
+  padding: 20px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 100;
+}
+.logo {
+  font-family: 'DM Serif Display', serif;
+  font-size: 20px;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+}
+.logo span { color: var(--muted2); font-size: 13px; font-family: 'Outfit', sans-serif; font-weight: 300; margin-left: 12px; }
+.header-stats { display: flex; gap: 24px; }
+.hstat { text-align: right; }
+.hstat-val { font-family: 'DM Mono', monospace; font-size: 18px; color: var(--accent); font-weight: 500; }
+.hstat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+
+/* LAYOUT */
+.layout { display: grid; grid-template-columns: 280px 1fr; height: calc(100vh - 61px); }
+
+/* SIDEBAR */
+.sidebar {
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 20px 0;
+}
+.sidebar::-webkit-scrollbar { width: 3px; }
+.sidebar::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+.filters { padding: 0 16px 16px; border-bottom: 1px solid var(--border); }
+.filter-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 8px; margin-top: 14px; }
+select, input[type=range] {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-family: 'Outfit', sans-serif;
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+select:focus { border-color: var(--accent); }
+.range-row { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 4px; }
+.filter-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border2);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+  color: var(--muted2);
+}
+.chip.active { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 500; }
+.chip:hover:not(.active) { border-color: var(--accent); color: var(--accent); }
+
+.prospect-list { padding: 12px 0; }
+.prospect-item {
+  padding: 12px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+  position: relative;
+}
+.prospect-item:hover { background: var(--surface); }
+.prospect-item.active { background: var(--surface2); border-left: 2px solid var(--accent); }
+.pi-addr { font-size: 13px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pi-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.pi-score-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+  margin-top: 8px;
+  overflow: hidden;
+}
+.pi-score-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+.score-badge {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* MAIN PANEL */
+.main { overflow-y: auto; }
+.main::-webkit-scrollbar { width: 3px; }
+.main::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--muted);
+  gap: 12px;
+}
+.empty-icon { font-size: 48px; opacity: 0.3; }
+.empty-state p { font-size: 14px; }
+
+.detail-wrap { padding: 32px; }
+.detail-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 28px; }
+.detail-addr {
+  font-family: 'DM Serif Display', serif;
+  font-size: 28px;
+  color: var(--text);
+  line-height: 1.2;
+}
+.detail-suburb { font-size: 13px; color: var(--muted2); margin-top: 4px; }
+.score-circle {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  flex-shrink: 0;
+  border: 2px solid var(--accent);
+}
+.score-num { font-family: 'DM Mono', monospace; font-size: 22px; font-weight: 500; color: var(--accent); line-height: 1; }
+.score-max { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+
+.cards-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+.card-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 6px; }
+.card-val { font-size: 20px; font-weight: 600; color: var(--text); }
+.card-val.accent { color: var(--accent); }
+.card-val.green { color: var(--green); }
+.card-sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+.section-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.reasons-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
+.reason-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.reason-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.profile-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(200,169,110,0.1);
+  border: 1px solid rgba(200,169,110,0.3);
+  color: var(--accent2);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 24px;
+}
+
+.owners-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+.owner-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.owner-row:last-child { border-bottom: none; }
+.owner-avatar {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent);
+  font-family: 'DM Mono', monospace;
+}
+.owner-name { font-size: 14px; font-weight: 500; }
+.owner-sub { font-size: 11px; color: var(--muted); }
+
+/* LETTER SECTION */
+.letter-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+.letter-controls { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.btn {
+  padding: 9px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--border2);
+  cursor: pointer;
+  font-family: 'Outfit', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #000; }
+.btn-primary:hover { background: var(--accent2); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-ghost { background: transparent; color: var(--muted2); }
+.btn-ghost:hover { background: var(--surface2); color: var(--text); }
+
+.tone-select { display: flex; gap: 6px; }
+.tone-btn {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border2);
+  background: transparent;
+  color: var(--muted2);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: 'Outfit', sans-serif;
+}
+.tone-btn.active { background: var(--surface2); border-color: var(--border2); color: var(--text); }
+
+.letter-output {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--muted2);
+  min-height: 120px;
+  white-space: pre-wrap;
+  font-family: 'Outfit', sans-serif;
+}
+.letter-output.loading { color: var(--muted); font-style: italic; }
+.letter-output.filled { color: var(--text); }
+.letter-copy-row { display: flex; justify-content: flex-end; margin-top: 10px; }
+
+/* HISTORY TABLE */
+.history-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.history-table th {
+  text-align: left;
+  padding: 8px 12px;
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid var(--border);
+  font-weight: 400;
+}
+.history-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted2);
+}
+.history-table tr:last-child td { border-bottom: none; }
+.history-table tr.current td { color: var(--text); font-weight: 500; }
+
+/* SPINNER */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  width: 14px; height: 14px;
+  border: 2px solid var(--border2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+
+/* NO RESULTS */
+.no-results { padding: 32px 16px; text-align: center; color: var(--muted); font-size: 13px; }
+
+.count-label {
+  padding: 10px 16px;
+  font-size: 11px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+.count-label span { color: var(--accent); font-weight: 500; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Prospect Intelligence <span>Cottesloe · WA</span></div>
+  <div class="header-stats">
+    <div class="hstat">
+      <div class="hstat-val" id="stat-total">—</div>
+      <div class="hstat-label">Propriétés</div>
+    </div>
+    <div class="hstat">
+      <div class="hstat-val" id="stat-hot">—</div>
+      <div class="hstat-label">Score ≥ 7</div>
+    </div>
+    <div class="hstat">
+      <div class="hstat-val" id="stat-showing">—</div>
+      <div class="hstat-label">Affichés</div>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="filters">
+      <div class="filter-label">Score minimum</div>
+      <input type="range" id="score-filter" min="0" max="10" value="6">
+      <div class="range-row"><span>0</span><span id="score-val">6+</span><span>10</span></div>
+
+      <div class="filter-label">Type de bien</div>
+      <div class="filter-chips" id="type-chips">
+        <div class="chip active" data-type="all">Tous</div>
+        <div class="chip" data-type="House">Maisons</div>
+        <div class="chip" data-type="Unit">Units</div>
+        <div class="chip" data-type="Flats">Flats</div>
+      </div>
+
+      <div class="filter-label">Profil vendeur</div>
+      <div class="filter-chips" id="profile-chips">
+        <div class="chip active" data-profile="all">Tous</div>
+        <div class="chip" data-profile="Downsizer">Downsizer</div>
+        <div class="chip" data-profile="Upgrade">Upgrade</div>
+        <div class="chip" data-profile="Investisseur">Investisseur</div>
+      </div>
+
+      <div class="filter-label">Trier par</div>
+      <select id="sort-select">
+        <option value="score">Score (meilleur d'abord)</option>
+        <option value="holding_desc">Holding le plus long</option>
+        <option value="gain_desc">Plus-value estimée</option>
+        <option value="alpha">Adresse A→Z</option>
+      </select>
+    </div>
+
+    <div class="count-label">Affichage : <span id="count-shown">—</span> prospects</div>
+    <div class="prospect-list" id="prospect-list"></div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main" id="main-panel">
+    <div class="empty-state">
+      <div class="empty-icon">🏠</div>
+      <p>Sélectionne un prospect dans la liste</p>
+      <p style="font-size:12px;color:var(--muted)">Cottesloe · 3 044 propriétés analysées</p>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===================== DATA =====================
+// Load from embedded JSON (generated from RPData CSV)
+let ALL_DATA = [];
+
+async function loadData() {
+  // Embedded data — top 500 scored prospects from Cottesloe
+  const resp = await fetch('prospects_data.json');
+  ALL_DATA = await resp.json();
+  init();
+}
+
+// ===================== STATE =====================
+let filtered = [];
+let selected = null;
+let scoreMin = 6;
+let typeFilter = 'all';
+let profileFilter = 'all';
+let sortMode = 'score';
+let currentTone = 'professionnel';
+
+// ===================== INIT =====================
+function init() {
+  document.getElementById('stat-total').textContent = ALL_DATA.length.toLocaleString('fr-FR');
+  document.getElementById('stat-hot').textContent = ALL_DATA.filter(d => d.score >= 7).length.toLocaleString('fr-FR');
+  applyFilters();
+  setupEvents();
+}
+
+function setupEvents() {
+  document.getElementById('score-filter').addEventListener('input', e => {
+    scoreMin = +e.target.value;
+    document.getElementById('score-val').textContent = scoreMin + '+';
+    applyFilters();
+  });
+
+  document.getElementById('sort-select').addEventListener('change', e => {
+    sortMode = e.target.value;
+    applyFilters();
+  });
+
+  document.querySelectorAll('#type-chips .chip').forEach(c => {
+    c.addEventListener('click', () => {
+      document.querySelectorAll('#type-chips .chip').forEach(x => x.classList.remove('active'));
+      c.classList.add('active');
+      typeFilter = c.dataset.type;
+      applyFilters();
+    });
+  });
+
+  document.querySelectorAll('#profile-chips .chip').forEach(c => {
+    c.addEventListener('click', () => {
+      document.querySelectorAll('#profile-chips .chip').forEach(x => x.classList.remove('active'));
+      c.classList.add('active');
+      profileFilter = c.dataset.profile;
+      applyFilters();
+    });
+  });
+}
+
+// ===================== FILTER + RENDER LIST =====================
+function applyFilters() {
+  filtered = ALL_DATA.filter(d => {
+    if (d.score < scoreMin) return false;
+    if (typeFilter !== 'all' && !d.prop_type.includes(typeFilter)) return false;
+    if (profileFilter !== 'all' && !d.profile.includes(profileFilter)) return false;
+    return true;
+  });
+
+  if (sortMode === 'score') filtered.sort((a,b) => b.score - a.score);
+  else if (sortMode === 'holding_desc') filtered.sort((a,b) => b.holding_years - a.holding_years);
+  else if (sortMode === 'gain_desc') filtered.sort((a,b) => b.gain_pct - a.gain_pct);
+  else if (sortMode === 'alpha') filtered.sort((a,b) => a.address.localeCompare(b.address));
+
+  document.getElementById('count-shown').textContent = filtered.length.toLocaleString('fr-FR');
+  document.getElementById('stat-showing').textContent = filtered.length.toLocaleString('fr-FR');
+
+  const list = document.getElementById('prospect-list');
+  if (filtered.length === 0) {
+    list.innerHTML = '<div class="no-results">Aucun prospect pour ces filtres</div>';
+    return;
+  }
+
+  list.innerHTML = filtered.slice(0, 200).map((d, i) => {
+    const scoreColor = d.score >= 8 ? '#c8a96e' : d.score >= 6 ? '#5a9fd4' : '#5a6070';
+    const scorePct = Math.round((d.score / 10) * 100);
+    const owners = d.owners.filter(o => o && o !== '-').join(' & ') || 'Propriétaire inconnu';
+    return `
+    <div class="prospect-item ${selected && selected.address === d.address ? 'active' : ''}" onclick="selectProspect(${i})">
+      <div class="score-badge" style="background:${scoreColor}22;color:${scoreColor};">${d.score}/10</div>
+      <div class="pi-addr">${d.address}</div>
+      <div class="pi-meta">${owners.substring(0,30)}${owners.length>30?'…':''} · ${d.holding_years}a</div>
+      <div class="pi-score-bar"><div class="pi-score-fill" style="width:${scorePct}%;background:${scoreColor};"></div></div>
+    </div>`;
+  }).join('');
+}
+
+// ===================== SELECT PROSPECT =====================
+function selectProspect(idx) {
+  selected = filtered[idx];
+  applyFilters(); // re-render list with active state
+  renderDetail(selected);
+}
+
+function renderDetail(d) {
+  const owners = d.owners.filter(o => o && o !== '-');
+  const mainOwner = owners[0] || 'Propriétaire';
+  const firstName = mainOwner.split(' ')[0];
+  const purchaseYear = new Date(d.purchase_date).getFullYear();
+  const gainFormatted = d.gain_estimate > 0 ? '+$' + Math.round(d.gain_estimate/1000) + 'k' : '—';
+  const estimatedVal = '$' + (d.estimated_value/1000000).toFixed(2) + 'M';
+  const purchaseVal = '$' + (d.purchase_price/1000).toFixed(0) + 'k';
+
+  const ownerRows = owners.length > 0 ? owners.map(o => {
+    const initials = o.split(' ').filter(Boolean).map(w=>w[0]).slice(0,2).join('');
+    return `<div class="owner-row">
+      <div class="owner-avatar">${initials}</div>
+      <div><div class="owner-name">${o.toLowerCase().replace(/\b\w/g,c=>c.toUpperCase())}</div>
+      <div class="owner-sub">Propriétaire actuel · Depuis ${purchaseYear}</div></div>
+    </div>`;
+  }).join('') : '<div class="owner-row" style="color:var(--muted);font-size:13px;">Propriétaire non renseigné</div>';
+
+  const reasonItems = d.reasons.map(r =>
+    `<div class="reason-item"><div class="reason-dot"></div>${r}</div>`
+  ).join('');
+
+  document.getElementById('main-panel').innerHTML = `
+  <div class="detail-wrap">
+    <div class="detail-header">
+      <div>
+        <div class="detail-addr">${d.address}</div>
+        <div class="detail-suburb">Cottesloe WA 6011 · ${d.prop_type} · ${d.beds} ch. ${d.baths} sdb · ${d.land_size}m²</div>
+      </div>
+      <div class="score-circle">
+        <div class="score-num">${d.score}</div>
+        <div class="score-max">/ 10</div>
+      </div>
+    </div>
+
+    <div class="profile-tag">⚡ ${d.profile}</div>
+
+    <div class="cards-grid">
+      <div class="card">
+        <div class="card-label">Acheté en</div>
+        <div class="card-val accent">${purchaseYear}</div>
+        <div class="card-sub">Détenu depuis ${d.holding_years} ans</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Prix d'achat</div>
+        <div class="card-val">${purchaseVal}</div>
+        <div class="card-sub">Prix de vente à l'époque</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Valeur estimée</div>
+        <div class="card-val green">${estimatedVal}</div>
+        <div class="card-sub">${gainFormatted} · +${d.gain_pct}%</div>
+      </div>
+    </div>
+
+    <div class="section-title">Pourquoi ce prospect est chaud</div>
+    <div class="reasons-list">${reasonItems}</div>
+
+    <div class="section-title">Propriétaires</div>
+    <div class="owners-box">${ownerRows}</div>
+
+    <div class="section-title">Générer une lettre de démarchage</div>
+    <div class="letter-section">
+      <div class="letter-controls">
+        <div class="tone-select">
+          <button class="tone-btn active" onclick="setTone('professionnel',this)">Professionnel</button>
+          <button class="tone-btn" onclick="setTone('chaleureux',this)">Chaleureux</button>
+          <button class="tone-btn" onclick="setTone('direct',this)">Direct</button>
+        </div>
+        <button class="btn btn-primary" id="gen-btn" onclick="generateLetter()">
+          <span id="gen-icon">✉</span> Générer la lettre
+        </button>
+        <button class="btn btn-ghost" onclick="copyLetter()">Copier</button>
+        <button class="btn btn-ghost" onclick="printLetter()">Imprimer</button>
+      </div>
+      <div class="letter-output" id="letter-output">La lettre apparaîtra ici après génération…</div>
+    </div>
+
+    <div class="section-title">Historique des ventes de cette propriété</div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:0;overflow:hidden;margin-bottom:32px;">
+      <table class="history-table">
+        <thead><tr><th>Date</th><th>Prix</th><th>Agent</th><th>Depuis</th></tr></thead>
+        <tbody id="history-body"></tbody>
+      </table>
+    </div>
+  </div>`;
+
+  // Populate history — find all sales for this address
+  loadHistory(d.address);
+}
+
+function loadHistory(address) {
+  const allSales = ALL_DATA_RAW ? ALL_DATA_RAW.filter(r => r.address === address) : [];
+  const tbody = document.getElementById('history-body');
+  if (!tbody) return;
+  if (allSales.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:16px;">Données d\'historique non disponibles dans cette vue</td></tr>';
+    return;
+  }
+  tbody.innerHTML = allSales.map((s,i) => `
+    <tr class="${i===0?'current':''}">
+      <td>${s.sale_date}</td>
+      <td>$${(s.sale_price/1000).toFixed(0)}k</td>
+      <td>${s.agency || '—'}</td>
+      <td>${i===0?'<span style="color:var(--accent)">Propriétaire actuel</span>':'Vente passée'}</td>
+    </tr>`).join('');
+}
+
+// ===================== TONE =====================
+function setTone(tone, btn) {
+  currentTone = tone;
+  document.querySelectorAll('.tone-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+// ===================== GENERATE LETTER =====================
+async function generateLetter() {
+  if (!selected) return;
+  const btn = document.getElementById('gen-btn');
+  const output = document.getElementById('letter-output');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Génération…';
+  output.className = 'letter-output loading';
+  output.textContent = 'L\'IA rédige votre lettre personnalisée…';
+
+  const d = selected;
+  const owners = d.owners.filter(o => o && o !== '-');
+  const ownerName = owners[0] ? owners[0].toLowerCase().replace(/\b\w/g,c=>c.toUpperCase()) : 'Propriétaire';
+  const firstName = ownerName.split(' ')[0];
+  const purchaseYear = new Date(d.purchase_date).getFullYear();
+  const gainFormatted = '$' + Math.round(d.gain_estimate/1000) + 'k';
+
+  const toneInstructions = {
+    'professionnel': 'Ton formel et professionnel, respectueux, sobre et factuel.',
+    'chaleureux': 'Ton chaleureux et humain, bienveillant, crée une connexion personnelle.',
+    'direct': 'Ton direct et concis, aller droit au but, sans fioritures.'
+  };
+
+  const prompt = `Tu es un agent immobilier de haut niveau spécialisé dans les suburbs premium de Perth, Australie Occidentale (Cottesloe, Dalkeith, Nedlands).
+
+Rédige une lettre de démarchage personnalisée pour ce propriétaire. La lettre doit sembler écrite à la main et pas comme un modèle générique.
+
+Informations sur la propriété :
+- Adresse : ${d.address}, Cottesloe WA 6011
+- Propriétaire(s) : ${ownerName}
+- Type : ${d.prop_type}, ${d.beds} chambres, ${d.baths} salles de bain, terrain ${d.land_size}m²
+- Acheté en ${purchaseYear} pour ${(d.purchase_price/1000).toFixed(0)}k
+- Détenu depuis ${d.holding_years} ans
+- Plus-value estimée : ${gainFormatted} (croissance estimée ${d.gain_pct}%)
+- Profil : ${d.profile}
+
+Contexte du marché Cottesloe 2025-2026 : marché très actif, forte demande d'acheteurs qualifiés, peu de stock disponible.
+
+Consignes :
+- ${toneInstructions[currentTone]}
+- Commence par "Cher(e) ${firstName},"
+- Mentionne leur suburb et leur situation spécifique (durée de détention, plus-value potentielle)
+- Souligne la rareté des biens à Cottesloe et la demande actuelle
+- Propose une évaluation gratuite et sans engagement
+- Signe "L'équipe Acton | Belle Property, Western Suburbs"
+- Maximum 200 mots
+- Écris en français
+- Ne mentionne PAS de chiffres précis sur la valeur actuelle (tu n'as pas accès à une évaluation officielle)
+
+Écris seulement la lettre, sans commentaire.`;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 600,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    const data = await response.json();
+    const text = data.content?.[0]?.text || 'Erreur lors de la génération.';
+    output.className = 'letter-output filled';
+    output.textContent = text;
+  } catch(e) {
+    output.className = 'letter-output';
+    output.textContent = 'Erreur de connexion à l\'API. Vérifie ta connexion internet.';
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '<span>✉</span> Regénérer';
+}
+
+// ===================== UTILS =====================
+function copyLetter() {
+  const text = document.getElementById('letter-output')?.textContent || '';
+  navigator.clipboard.writeText(text).then(() => alert('Lettre copiée !'));
+}
+
+function printLetter() {
+  const text = document.getElementById('letter-output')?.textContent || '';
+  const w = window.open('', '_blank');
+  w.document.write(`<html><body style="font-family:Georgia;max-width:600px;margin:60px auto;line-height:1.8;font-size:15px;white-space:pre-wrap;">${text}</body></html>`);
+  w.print();
+}
+
+// ===================== LOAD =====================
+// Since we can't do fetch in a standalone file easily, embed data inline
+window.ALL_DATA_RAW = null;
+
+fetch('prospects_data.json')
+  .then(r => r.json())
+  .then(data => {
+    ALL_DATA = data;
+    document.getElementById('stat-total').textContent = ALL_DATA.length.toLocaleString('fr-FR');
+    document.getElementById('stat-hot').textContent = ALL_DATA.filter(d => d.score >= 7).length.toLocaleString('fr-FR');
+    applyFilters();
+    setupEvents();
+  })
+  .catch(e => {
+    document.getElementById('main-panel').innerHTML = `
+    <div class="empty-state">
+      <div class="empty-icon">⚠</div>
+      <p>Erreur de chargement des données</p>
+      <p style="font-size:12px;color:var(--muted)">Assure-toi que prospects_data.json est dans le même dossier</p>
+    </div>`;
+  });
+</script>
+</body>
+</html>
