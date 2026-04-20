@@ -373,6 +373,10 @@ select:focus { border-color: var(--accent); }
       <div class="hstat-val" id="stat-showing">—</div>
       <div class="hstat-label">Affichés</div>
     </div>
+    <button class="btn btn-primary" id="upload-btn" style="margin-left:12px;">
+      <span>⬆</span> Upload CSV
+    </button>
+    <input type="file" id="csv-input" accept=".csv" style="display:none;">
   </div>
 </header>
 
@@ -733,23 +737,195 @@ function printLetter() {
 // Since we can't do fetch in a standalone file easily, embed data inline
 window.ALL_DATA_RAW = null;
 
-fetch('prospects_data.json')
-  .then(r => r.json())
+fetch('data/prospects_data.json')
+  .then(r => r.ok ? r.json() : Promise.reject())
   .then(data => {
     ALL_DATA = data;
     document.getElementById('stat-total').textContent = ALL_DATA.length.toLocaleString('fr-FR');
     document.getElementById('stat-hot').textContent = ALL_DATA.filter(d => d.score >= 7).length.toLocaleString('fr-FR');
     applyFilters();
     setupEvents();
+    setupUpload();
   })
-  .catch(e => {
+  .catch(() => {
     document.getElementById('main-panel').innerHTML = `
     <div class="empty-state">
-      <div class="empty-icon">⚠</div>
-      <p>Erreur de chargement des données</p>
-      <p style="font-size:12px;color:var(--muted)">Assure-toi que prospects_data.json est dans le même dossier</p>
+      <div class="empty-icon">⬆</div>
+      <p>Aucune donnée — upload un export RPData CSV pour commencer</p>
     </div>`;
+    setupEvents();
+    setupUpload();
   });
+
+// ===================== CSV UPLOAD + SCORING =====================
+function setupUpload() {
+  const btn = document.getElementById('upload-btn');
+  const input = document.getElementById('csv-input');
+  btn.addEventListener('click', () => input.click());
+  input.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => processCSV(ev.target.result);
+    reader.readAsText(file);
+  });
+}
+
+// Robust CSV parser — handles quoted fields with commas/newlines
+function parseCSV(text) {
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // strip BOM
+  const rows = [];
+  let row = [], field = '', inQuote = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuote) {
+      if (c === '"' && text[i+1] === '"') { field += '"'; i++; }
+      else if (c === '"') inQuote = false;
+      else field += c;
+    } else {
+      if (c === '"') inQuote = true;
+      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === '\n' || c === '\r') {
+        if (c === '\r' && text[i+1] === '\n') i++;
+        row.push(field); field = '';
+        if (row.length > 1 || row[0] !== '') rows.push(row);
+        row = [];
+      } else field += c;
+    }
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+function parsePrice(s) {
+  if (!s) return null;
+  const n = parseInt(s.replace(/[$,\s]/g, ''), 10);
+  return isNaN(n) ? null : n;
+}
+
+function parseDate(s) {
+  if (!s) return null;
+  s = s.trim();
+  const months = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11 };
+  let m = s.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/);
+  if (m) {
+    const mo = months[m[2].toLowerCase()];
+    if (mo !== undefined) return new Date(+m[3], mo, +m[1]);
+  }
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return new Date(+m[3], +m[2]-1, +m[1]);
+  return null;
+}
+
+function scoreProperty(holding, propType, gainPct, purchaseYear) {
+  let score = 0;
+  const reasons = [];
+  const h = holding;
+  if (h >= 5 && h < 8)       { score += 3; reasons.push('5-8 ans de détention (zone upgrade/famille)'); }
+  else if (h >= 8 && h < 12) { score += 4; reasons.push('8-12 ans de détention (peak de revente)'); }
+  else if (h >= 12 && h < 20){ score += 5; reasons.push('12-20 ans de détention (profil downsizer)'); }
+  else if (h >= 20 && h < 30){ score += 4; reasons.push('20-30 ans de détention (succession probable)'); }
+  else if (h >= 30)          { score += 3; reasons.push('30+ ans (succession/retraite)'); }
+
+  if (propType && propType.includes('House')) { score += 1; reasons.push('Maison individuelle'); }
+
+  if (gainPct > 200)      { score += 3; reasons.push(`+${gainPct}% de plus-value estimée`); }
+  else if (gainPct > 100) { score += 2; reasons.push(`+${gainPct}% de plus-value estimée`); }
+  else if (gainPct > 50)  { score += 1; reasons.push(`+${gainPct}% de plus-value estimée`); }
+
+  if (purchaseYear >= 2010 && purchaseYear <= 2016) {
+    score += 1; reasons.push('Acheté pendant creux Perth 2010-2016');
+  }
+
+  let profile;
+  if (h >= 15)      profile = 'Downsizer probable';
+  else if (h >= 8)  profile = 'Upgrade / changement de vie';
+  else if (h >= 5)  profile = 'Investisseur ou rotation';
+  else              profile = 'Trop récent';
+
+  return { score, reasons, profile };
+}
+
+function processCSV(text) {
+  const panel = document.getElementById('main-panel');
+  panel.innerHTML = `<div class="empty-state"><div class="spinner"></div><p>Analyse du CSV…</p></div>`;
+
+  setTimeout(() => {
+    try {
+      const rows = parseCSV(text);
+      const groups = new Map();
+      for (const row of rows) {
+        if (row.length < 13) continue;
+        const addr = (row[0]||'').trim();
+        const suburb = (row[1]||'').trim();
+        const postcode = (row[3]||'').trim();
+        if (!addr) continue;
+        const key = `${addr}|${suburb}|${postcode}`;
+        const date = parseDate(row[12]);
+        const price = parsePrice(row[11]);
+        if (!date || !price) continue;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push({
+          address: addr, suburb, postcode,
+          prop_type: (row[4]||'').trim(),
+          beds: (row[5]||'').trim(),
+          baths: (row[6]||'').trim(),
+          land_size: (row[8]||'').trim(),
+          sale_price: price,
+          sale_date: date,
+          agency: (row[14]||'').trim(),
+          agent: (row[15]||'').trim(),
+          owner1: (row[19]||'').trim(),
+          owner2: (row[20]||'').trim(),
+        });
+      }
+
+      const CAGR = 0.07;
+      const today = new Date();
+      const result = [];
+      for (const [, sales] of groups) {
+        sales.sort((a,b) => a.sale_date - b.sale_date);
+        const latest = sales[sales.length - 1];
+        const earliest = sales[0];
+        const holding = Math.round(((today - latest.sale_date) / (1000*60*60*24*365.25)) * 10) / 10;
+        const yearsSince = (today - earliest.sale_date) / (1000*60*60*24*365.25);
+        const estimated = Math.round(earliest.sale_price * Math.pow(1 + CAGR, yearsSince));
+        const gain = estimated - latest.sale_price;
+        const gainPct = latest.sale_price > 0 ? Math.round((gain / latest.sale_price) * 100) : 0;
+        const purchaseYear = latest.sale_date.getFullYear();
+        const { score, reasons, profile } = scoreProperty(holding, latest.prop_type, gainPct, purchaseYear);
+        const owners = [latest.owner1, latest.owner2].filter(o => o && o !== '-');
+
+        result.push({
+          address: latest.address, suburb: latest.suburb,
+          prop_type: latest.prop_type, beds: latest.beds, baths: latest.baths,
+          land_size: latest.land_size,
+          purchase_price: latest.sale_price,
+          purchase_date: latest.sale_date.toISOString().slice(0,10),
+          purchase_year: purchaseYear,
+          holding_years: holding,
+          estimated_value: estimated,
+          gain_estimate: gain, gain_pct: gainPct,
+          score, profile, reasons, owners,
+          agency_bought_from: latest.agency,
+          nb_past_sales: sales.length,
+        });
+      }
+      result.sort((a,b) => b.score - a.score);
+
+      ALL_DATA = result;
+      selected = null;
+      const suburbName = result[0]?.suburb || 'Import';
+      document.querySelector('.logo').innerHTML = `Prospect Intelligence <span>${suburbName} · WA</span>`;
+      document.getElementById('stat-total').textContent = result.length.toLocaleString('fr-FR');
+      document.getElementById('stat-hot').textContent = result.filter(d => d.score >= 7).length.toLocaleString('fr-FR');
+      applyFilters();
+      panel.innerHTML = `<div class="empty-state"><div class="empty-icon">✓</div><p>${result.length.toLocaleString('fr-FR')} propriétés analysées · ${result.filter(d=>d.score>=7).length} prospects chauds</p><p style="font-size:12px;color:var(--muted)">Sélectionne un prospect dans la liste</p></div>`;
+    } catch (err) {
+      panel.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠</div><p>Erreur lors de l'analyse du CSV</p><p style="font-size:12px;color:var(--muted)">${err.message}</p></div>`;
+    }
+  }, 50);
+}
 </script>
 </body>
 </html>
