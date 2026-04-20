@@ -6,6 +6,7 @@
 <title>Prospect Intelligence — Cottesloe</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <style>
 :root {
   --bg: #0d0f12;
@@ -375,6 +376,9 @@ select:focus { border-color: var(--accent); }
     </div>
     <button class="btn btn-primary" id="upload-btn" style="margin-left:12px;">
       <span>⬆</span> Upload CSV
+    </button>
+    <button class="btn btn-ghost" id="export-btn" style="margin-left:6px;">
+      <span>⬇</span> Export Excel
     </button>
     <input type="file" id="csv-input" accept=".csv" style="display:none;">
   </div>
@@ -769,6 +773,53 @@ function setupUpload() {
     reader.onload = ev => processCSV(ev.target.result);
     reader.readAsText(file);
   });
+  document.getElementById('export-btn').addEventListener('click', exportExcel);
+}
+
+function exportExcel() {
+  const rows = (filtered && filtered.length) ? filtered : ALL_DATA;
+  if (!rows || !rows.length) { alert('Rien à exporter — upload un CSV d\'abord.'); return; }
+
+  const suburb = rows[0]?.suburb || 'Prospects';
+  const header = ['Score','Address','Suburb','Type','Beds','Baths','Land (m²)',
+    'Owner 1','Owner 2','Purchase Year','Purchase Price','Holding (yrs)',
+    'Est. Value','Est. Gain','Gain %','Profile','Reasons','Agency Bought From','Past Sales','Notes'];
+
+  const data = [header, ...rows.map(d => [
+    d.score,
+    d.address,
+    d.suburb,
+    d.prop_type,
+    d.beds,
+    d.baths,
+    d.land_size,
+    d.owners[0] || '',
+    d.owners[1] || '',
+    d.purchase_year,
+    d.purchase_price,
+    d.holding_years,
+    d.estimated_value,
+    d.gain_estimate,
+    d.gain_pct,
+    d.profile,
+    (d.reasons || []).join(' · '),
+    d.agency_bought_from || '',
+    d.nb_past_sales,
+    ''
+  ])];
+
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [
+    {wch:6},{wch:38},{wch:14},{wch:16},{wch:5},{wch:5},{wch:9},
+    {wch:22},{wch:22},{wch:8},{wch:13},{wch:9},
+    {wch:13},{wch:13},{wch:7},{wch:22},{wch:60},{wch:22},{wch:6},{wch:40}
+  ];
+  ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Prospects');
+  const today = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `prospects-${suburb.toLowerCase().replace(/\s+/g,'-')}-${today}.xlsx`);
 }
 
 // Robust CSV parser — handles quoted fields with commas/newlines
