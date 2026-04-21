@@ -360,8 +360,11 @@ select:focus { border-color: var(--accent); }
 <body>
 
 <header>
-  <div class="logo">Prospect Intelligence <span>Cottesloe · WA</span></div>
+  <div class="logo">Prospect Intelligence <span id="logo-sub">WA</span></div>
   <div class="header-stats">
+    <select id="suburb-select" style="margin-right:12px;min-width:180px;">
+      <option value="">— Suburb —</option>
+    </select>
     <div class="hstat">
       <div class="hstat-val" id="stat-total">—</div>
       <div class="hstat-label">Propriétés</div>
@@ -379,6 +382,9 @@ select:focus { border-color: var(--accent); }
     </button>
     <button class="btn btn-ghost" id="export-btn" style="margin-left:6px;">
       <span>⬇</span> Export Excel
+    </button>
+    <button class="btn btn-ghost" id="delete-btn" style="margin-left:6px;" title="Supprimer ce suburb de la base locale">
+      <span>🗑</span>
     </button>
     <input type="file" id="csv-input" accept=".csv" style="display:none;">
   </div>
@@ -737,29 +743,123 @@ function printLetter() {
   w.print();
 }
 
-// ===================== LOAD =====================
-// Since we can't do fetch in a standalone file easily, embed data inline
-window.ALL_DATA_RAW = null;
+// ===================== INDEXEDDB (multi-suburb storage) =====================
+const DB_NAME = 'prospect_intelligence';
+const STORE = 'suburbs';
+let db = null;
 
-fetch('data/prospects_data.json')
-  .then(r => r.ok ? r.json() : Promise.reject())
-  .then(data => {
-    ALL_DATA = data;
-    document.getElementById('stat-total').textContent = ALL_DATA.length.toLocaleString('fr-FR');
-    document.getElementById('stat-hot').textContent = ALL_DATA.filter(d => d.score >= 7).length.toLocaleString('fr-FR');
-    applyFilters();
-    setupEvents();
-    setupUpload();
-  })
-  .catch(() => {
-    document.getElementById('main-panel').innerHTML = `
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const d = req.result;
+      if (!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE, { keyPath: 'suburb' });
+    };
+    req.onsuccess = () => { db = req.result; resolve(db); };
+    req.onerror = () => reject(req.error);
+  });
+}
+function dbSaveSuburb(suburb, data) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).put({ suburb, data, updated: Date.now() });
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+}
+function dbGetSuburb(suburb) {
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(STORE, 'readonly').objectStore(STORE).get(suburb);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function dbListSuburbs() {
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(STORE, 'readonly').objectStore(STORE).getAllKeys();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function dbDeleteSuburb(suburb) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).delete(suburb);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+let currentSuburb = null;
+
+async function refreshSuburbList() {
+  const keys = await dbListSuburbs();
+  keys.sort();
+  const sel = document.getElementById('suburb-select');
+  sel.innerHTML = keys.length
+    ? keys.map(k => `<option value="${k}" ${k===currentSuburb?'selected':''}>${k}</option>`).join('')
+    : '<option value="">— Aucun suburb chargé —</option>';
+}
+
+function setEmpty(msg) {
+  document.getElementById('main-panel').innerHTML = `
     <div class="empty-state">
       <div class="empty-icon">⬆</div>
-      <p>Aucune donnée — upload un export RPData CSV pour commencer</p>
+      <p>${msg}</p>
     </div>`;
-    setupEvents();
-    setupUpload();
+}
+
+async function loadSuburb(suburb) {
+  const rec = await dbGetSuburb(suburb);
+  if (!rec) return;
+  ALL_DATA = rec.data;
+  currentSuburb = suburb;
+  selected = null;
+  document.getElementById('logo-sub').textContent = `${suburb} · WA`;
+  document.getElementById('stat-total').textContent = ALL_DATA.length.toLocaleString('fr-FR');
+  document.getElementById('stat-hot').textContent = ALL_DATA.filter(d => d.score >= 7).length.toLocaleString('fr-FR');
+  applyFilters();
+  setEmpty(`${suburb} · ${ALL_DATA.length.toLocaleString('fr-FR')} propriétés · sélectionne un prospect`);
+  localStorage.setItem('last_suburb', suburb);
+}
+
+(async () => {
+  await openDB();
+  setupEvents();
+  setupUpload();
+
+  document.getElementById('suburb-select').addEventListener('change', e => {
+    if (e.target.value) loadSuburb(e.target.value);
   });
+  document.getElementById('delete-btn').addEventListener('click', async () => {
+    if (!currentSuburb) return;
+    if (!confirm(`Supprimer "${currentSuburb}" de la base locale ?`)) return;
+    await dbDeleteSuburb(currentSuburb);
+    currentSuburb = null;
+    ALL_DATA = [];
+    document.getElementById('logo-sub').textContent = 'WA';
+    document.getElementById('stat-total').textContent = '—';
+    document.getElementById('stat-hot').textContent = '—';
+    document.getElementById('stat-showing').textContent = '—';
+    document.getElementById('prospect-list').innerHTML = '';
+    document.getElementById('count-shown').textContent = '0';
+    setEmpty('Aucune donnée — upload un export RPData CSV pour commencer');
+    await refreshSuburbList();
+  });
+
+  await refreshSuburbList();
+  const last = localStorage.getItem('last_suburb');
+  const keys = await dbListSuburbs();
+  if (last && keys.includes(last)) {
+    document.getElementById('suburb-select').value = last;
+    await loadSuburb(last);
+  } else if (keys.length) {
+    document.getElementById('suburb-select').value = keys[0];
+    await loadSuburb(keys[0]);
+  } else {
+    setEmpty('Aucune donnée — upload un export RPData CSV pour commencer');
+  }
+})();
 
 // ===================== CSV UPLOAD + SCORING =====================
 function setupUpload() {
@@ -964,14 +1064,14 @@ function processCSV(text) {
       }
       result.sort((a,b) => b.score - a.score);
 
-      ALL_DATA = result;
-      selected = null;
-      const suburbName = result[0]?.suburb || 'Import';
-      document.querySelector('.logo').innerHTML = `Prospect Intelligence <span>${suburbName} · WA</span>`;
-      document.getElementById('stat-total').textContent = result.length.toLocaleString('fr-FR');
-      document.getElementById('stat-hot').textContent = result.filter(d => d.score >= 7).length.toLocaleString('fr-FR');
-      applyFilters();
-      panel.innerHTML = `<div class="empty-state"><div class="empty-icon">✓</div><p>${result.length.toLocaleString('fr-FR')} propriétés analysées · ${result.filter(d=>d.score>=7).length} prospects chauds</p><p style="font-size:12px;color:var(--muted)">Sélectionne un prospect dans la liste</p></div>`;
+      const suburbName = result[0]?.suburb || prompt('Nom du suburb ?') || 'Import';
+      dbSaveSuburb(suburbName, result).then(async () => {
+        currentSuburb = suburbName;
+        await refreshSuburbList();
+        document.getElementById('suburb-select').value = suburbName;
+        await loadSuburb(suburbName);
+        panel.innerHTML = `<div class="empty-state"><div class="empty-icon">✓</div><p>${result.length.toLocaleString('fr-FR')} propriétés analysées · ${result.filter(d=>d.score>=7).length} prospects chauds</p><p style="font-size:12px;color:var(--muted)">${suburbName} sauvegardé · sélectionne un prospect</p></div>`;
+      });
     } catch (err) {
       panel.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠</div><p>Erreur lors de l'analyse du CSV</p><p style="font-size:12px;color:var(--muted)">${err.message}</p></div>`;
     }
